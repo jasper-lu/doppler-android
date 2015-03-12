@@ -17,40 +17,45 @@ import android.util.Xml;
  * http://stackoverflow.com/questions/18652000/record-audio-in-java-and-determine-real-time-if-a-tone-of-x-frequency-was-played
  */
 public class Doppler {
-    public static final int PRELIM_FREQ = 10000;
+    public static final int PRELIM_FREQ = 723;
     public static final int DEFAULT_SAMPLE_RATE = 44100;
     //in milliseconds
-    public static final int INTERVAL = 10;
+    public static final int INTERVAL = 3000;
     private static final int MILLI_PER_SECOND = 1000;
 
     private AudioRecord microphone;
     private AudioTrack audioTrack;
 
-    private byte[] generatedSound = new byte[getNumSamples()];
+    private byte[] generatedSound;
     private int SAMPLE_RATE = DEFAULT_SAMPLE_RATE;
 
     public Doppler() {
+        //write a check to see if stereo is supported
         Integer bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT);
         microphone = new AudioRecord(MediaRecorder.AudioSource.MIC, DEFAULT_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
-        audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT, getNumSamples(), AudioTrack.MODE_STATIC);
+        audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO,
+                AudioFormat.ENCODING_PCM_16BIT, bufferSize, AudioTrack.MODE_STATIC);
+        generatedSound = new byte[getNumSamples() * 2];
 
-        generateTone(generatedSound, SAMPLE_RATE, PRELIM_FREQ);
+        generateTone(generatedSound, SAMPLE_RATE, getNumSamples(), PRELIM_FREQ);
         audioTrack.write(generatedSound, 0, generatedSound.length);
     }
 
     public boolean start() {
         try {
-            microphone.startRecording();
-            new Handler().postDelayed(
-                new Runnable() {
-                    @Override
-                    public void run() {
-                        Log.d("DOPPLER", "Testing");
-                        audioTrack.play();
-                    }
-            }, INTERVAL);
+            //microphone.startRecording();
+            final Handler handler = new Handler();
+            final Runnable runnable = new Runnable() {
+                @Override
+                public void run() {
+                    //Log.d("DOPPLER", "Testing");
+
+                    audioTrack.play();
+                    handler.postDelayed(this, INTERVAL);
+                }
+            };
+            runnable.run();
             return true;
         } catch (Exception e) {
             e.printStackTrace();
@@ -62,10 +67,11 @@ public class Doppler {
         return SAMPLE_RATE * INTERVAL / MILLI_PER_SECOND;
     }
 
-    private void generateTone(byte[] track, int sampleRate, int frequency) {
+    private void generateTone(byte[] track, int sampleRate, int numSamples, int frequency) {
+        Log.d("Generate tone", "Sample Rate: " + sampleRate + " numSamples " + numSamples);
         // fill out the array
-        double[] sample = new double[getNumSamples()];
-        for (int i = 0; i < sampleRate; ++i) {
+        double[] sample = new double[numSamples];
+        for (int i = 0; i < numSamples; ++i) {
             sample[i] = Math.sin(2 * Math.PI * i / (sampleRate/frequency));
         }
 
@@ -78,7 +84,6 @@ public class Doppler {
             // in 16 bit wav PCM, first byte is the low order byte
             track[idx++] = (byte) (val & 0x00ff);
             track[idx++] = (byte) ((val & 0xff00) >>> 8);
-
         }
     }
 
