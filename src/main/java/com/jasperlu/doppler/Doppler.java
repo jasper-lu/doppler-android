@@ -24,7 +24,7 @@ public class Doppler {
     private static final int MILLI_PER_SECOND = 1000;
 
     private AudioRecord microphone;
-    private AudioTrack audioTrack;
+    private FrequencyPlayer frequencyPlayer;
 
     private byte[] generatedSound;
     private int SAMPLE_RATE = DEFAULT_SAMPLE_RATE;
@@ -34,38 +34,22 @@ public class Doppler {
         Integer bufferSize = getNumSamples() * 2;
         microphone = new AudioRecord(MediaRecorder.AudioSource.MIC, DEFAULT_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
-        audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO,
-                AudioFormat.ENCODING_PCM_16BIT, bufferSize, AudioTrack.MODE_STATIC);
-
-        generatedSound = generateTone(SAMPLE_RATE, getNumSamples(), PRELIM_FREQ);
-        audioTrack.write(generatedSound, 0, generatedSound.length);
+        frequencyPlayer = new FrequencyPlayer(PRELIM_FREQ, INTERVAL);
     }
 
     public boolean start() {
         try {
-            //microphone.startRecording();
-            /*
-            final Handler handler = new Handler();
-            final Runnable runnable = new Runnable() {
-                @Override
-                public void run() {
-                    Log.d("DOPPLER", "Testing");
-                    audioTrack.stop();
-                    Log.d("DOPPLER", "stopped");
-                    audioTrack.reloadStaticData();
-                    Log.d("DOPPLER", "reload");
-                    audioTrack.play();
-                    Log.d("DOPPLER", "playing");
-                    handler.postDelayed(this, INTERVAL);
-                }
-            };
-            runnable.run();
-            */
+            frequencyPlayer.play();
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
 
-            //frame size is 4 because i have stereo on as well. frame size = length / (stereo vs mono * 16 vs 8 pcm)
-            Log.d("loop points", audioTrack.setLoopPoints(0, generatedSound.length /4, -1) + "");
-
-            audioTrack.play();
+    public boolean pause() {
+        try {
+            frequencyPlayer.pause();
             return true;
         } catch (Exception e) {
             e.printStackTrace();

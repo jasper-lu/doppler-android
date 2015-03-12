@@ -15,7 +15,7 @@ public class FrequencyPlayer {
     private int mInterval;
 
     private static int DEFAULT_SAMPLE_RATE = 44100;
-    private static int MILLIS_PER_SECOND = 44100;
+    private static int MILLIS_PER_SECOND = 1000;
 
 
     private byte[] generatedSound;
@@ -31,6 +31,7 @@ public class FrequencyPlayer {
         setFrequency(frequency);
     }
 
+    //sets to new frequency and continues playing
     public void changeFrequency(int frequency) {
         setFrequency(frequency);
         play();
@@ -40,12 +41,15 @@ public class FrequencyPlayer {
     public void setFrequency(int frequency) {
         mFrequency = frequency;
         generateTone();
-        audioTrack.write(generatedSound, 0, generatedSound.length);
+        Log.d("FreqPlayer", "" +audioTrack.write(generatedSound, 0, generatedSound.length));
         audioTrack.setLoopPoints(0, generatedSound.length / 4, -1);
     }
 
     public void play() {
         audioTrack.play();
+    }
+    public void pause() {
+        audioTrack.pause();
     }
 
     private int getNumSamples() {
