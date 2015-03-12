@@ -60,36 +60,4 @@ public class Doppler {
     private int getNumSamples() {
         return SAMPLE_RATE * INTERVAL / MILLI_PER_SECOND;
     }
-
-    private byte[] generateTone(int sampleRate, int numSamples, int frequency) {
-        Log.d("Generate tone", "Sample Rate: " + sampleRate + " numSamples " + numSamples);
-        // fill out the array
-        double[] sample = new double[numSamples];
-        for (int i = 0; i < numSamples; ++i) {
-            sample[i] = Math.sin(2 * Math.PI * i / (sampleRate/frequency));
-        }
-
-        // convert to 16 bit pcm sound array
-        // assumes the sample buffer is normalised.
-        byte[] track = new byte[getNumSamples() * 2];
-        int idx = 0;
-        for (final double dVal : sample) {
-            // scale to maximum amplitude
-            final short val = (short) ((dVal * 32767));
-            // in 16 bit wav PCM, first byte is the low order byte
-            track[idx++] = (byte) (val & 0x00ff);
-            track[idx++] = (byte) ((val & 0xff00) >>> 8);
-        }
-        return track;
-    }
-
-    private void test() {
-        Thread thread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                short[] audioData = new short[getNumSamples()];
-                microphone.read(audioData, 0, getNumSamples());
-            }
-        });
-    }
 }
