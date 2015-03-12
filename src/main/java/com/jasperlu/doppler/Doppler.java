@@ -5,14 +5,16 @@ import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
+import android.os.Handler;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.util.Xml;
 
 /**
  * Created by Jasper on 3/11/2015.
  */
 public class Doppler {
-    public static final int PRELIM_FREQ = 20000;
+    public static final int PRELIM_FREQ = 10000;
     public static final int DEFAULT_SAMPLE_RATE = 44100;
     //in milliseconds
     public static final int INTERVAL = 10;
@@ -28,26 +30,24 @@ public class Doppler {
         Integer bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT);
         microphone = new AudioRecord(MediaRecorder.AudioSource.MIC, DEFAULT_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
-        audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO
+        audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT, getNumSamples(), AudioTrack.MODE_STATIC);
 
+        generateTone(generatedSound, SAMPLE_RATE, PRELIM_FREQ);
         audioTrack.write(generatedSound, 0, generatedSound.length);
     }
 
     public boolean start() {
         try {
             microphone.startRecording();
-            Thread playSoundThread = new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        Thread.sleep(INTERVAL);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
+            new Handler().postDelayed(
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        Log.d("DOPPLER", "Testing");
+                        audioTrack.play();
                     }
-                    audioTrack.play();
-                }
-            });
+            }, INTERVAL);
             return true;
         } catch (Exception e) {
             return false;
@@ -58,11 +58,11 @@ public class Doppler {
         return SAMPLE_RATE * INTERVAL / MILLI_PER_SECOND;
     }
 
-    private void generateTone(byte[] track, int sampleRate, int freqeuncy) {
+    private void generateTone(byte[] track, int sampleRate, int frequency) {
         // fill out the array
         double[] sample = new double[getNumSamples()];
         for (int i = 0; i < sampleRate; ++i) {
-            sample[i] = Math.sin(2 * Math.PI * i / (sampleRate/freqeuncy));
+            sample[i] = Math.sin(2 * Math.PI * i / (sampleRate/frequency));
         }
 
         // convert to 16 bit pcm sound array
