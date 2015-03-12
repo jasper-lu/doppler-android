@@ -12,6 +12,9 @@ import android.util.Xml;
 
 /**
  * Created by Jasper on 3/11/2015.
+ *
+ * To find frequency, check:
+ * http://stackoverflow.com/questions/18652000/record-audio-in-java-and-determine-real-time-if-a-tone-of-x-frequency-was-played
  */
 public class Doppler {
     public static final int PRELIM_FREQ = 10000;
@@ -50,6 +53,7 @@ public class Doppler {
             }, INTERVAL);
             return true;
         } catch (Exception e) {
+            e.printStackTrace();
             return false;
         }
     }
