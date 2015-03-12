@@ -22,7 +22,7 @@ public class Doppler {
     public static final int RELEVANT_FREQ_WINDOW = 33;
     //in milliseconds
     public static final int INTERVAL = 3000;
-    public static final int READ_INTERVAL = 3000;
+    public static final int READ_INTERVAL = 200;
     private static final int MILLI_PER_SECOND = 1000;
 
     private AudioRecord microphone;
@@ -32,12 +32,12 @@ public class Doppler {
     private int frequency;
 
     private short[] recorded;
+    private int bufferSize;
 
     public Doppler() {
         //write a check to see if stereo is supported
-        Integer bufferSize = getNumSamples() * 2;
+        bufferSize = AudioTrack.getMinBufferSize(DEFAULT_SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         frequency = PRELIM_FREQ;
-        recorded = new short[getNumSamples()];
         microphone = new AudioRecord(MediaRecorder.AudioSource.DEFAULT, DEFAULT_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
 
@@ -87,7 +87,11 @@ public class Doppler {
     }
 
     private void attemptRead() {
-        microphone.read(recorded, 0, getNumSamples());
+        recorded = new short[bufferSize];
+        microphone.read(recorded, 0, bufferSize);
+
+
+
         int primaryTone = freqToIndex(2048);
         Log.d("Doppler", "Primary tone index: " + primaryTone + "");
         short primaryVolume = recorded[primaryTone];
@@ -96,12 +100,22 @@ public class Doppler {
 
         int leftBandwidth = 0;
         int normalizedVolume = 0;
+
+
+        Log.d("Doppler", "Primary volume: " + primaryVolume + "");
+        /*
         do {
             leftBandwidth++;
             short volume = recorded[primaryTone - leftBandwidth];
             normalizedVolume = volume/primaryVolume;
         } while (normalizedVolume > maxVolumeRatio && leftBandwidth < RELEVANT_FREQ_WINDOW);
+        */
 
-        Log.d("DOppler", leftBandwidth + "");
+        Log.d("DOppler", "Left bandwidth is" + "");
+    }
+
+    //changes signed byte to unsigned
+    private int maskByte(int b) {
+        return b & 0xFF;
     }
 }
