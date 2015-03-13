@@ -54,13 +54,7 @@ public class Doppler {
         try {
             microphone.startRecording();
             frequencyPlayer.play();
-            new Handler().postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    attemptRead();
-                    new Handler().postDelayed(this, 200);
-                }
-            }, 200);
+            attemptRead();
             return true;
         } catch (Exception e) {
             e.printStackTrace();
