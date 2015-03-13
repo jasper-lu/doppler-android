@@ -1,16 +1,11 @@
 package com.jasperlu.doppler;
 
 import android.media.AudioFormat;
-import android.media.AudioManager;
 import android.media.AudioRecord;
-import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.os.Handler;
-import android.provider.MediaStore;
 import android.util.Log;
-import android.util.Xml;
 
-import com.jasperlu.doppler.FFT.Complex;
 import com.jasperlu.doppler.FFT.FFT;
 
 /**
@@ -34,37 +29,50 @@ public class Doppler {
 
     private int frequency;
 
-    private byte[] recorded;
-    private int bufferSize;
+
+    private short[] buffer;
+    private int bufferSize = 2048;
+
+    com.jasperlu.doppler.FFT.FFT fft;
 
     public Doppler() {
         //write a check to see if stereo is supported
-        bufferSize = AudioTrack.getMinBufferSize(DEFAULT_SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
-        //bufferSize = 4096;
+        bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        buffer = new short[bufferSize];
         Log.d("BUEFFER SIZE IS ", bufferSize + "");
         frequency = PRELIM_FREQ;
 
         frequencyPlayer = new FrequencyPlayer(PRELIM_FREQ, INTERVAL);
 
-        microphone = new AudioRecord(MediaRecorder.AudioSource.MIC, DEFAULT_SAMPLE_RATE,
+        microphone = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, DEFAULT_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
+
+        //fft = new com.jasperlu.doppler.FFT2.FFT(bufferSize, SAMPLE_RATE);
     }
 
     public boolean start() {
+        frequencyPlayer.play();
         try {
-            //microphone.startRecording();
-            frequencyPlayer.play();
-            //attemptRead();
+            //you might get an error here if another app hasn't released the microphone
+            microphone.startRecording();
+
+            new Handler().postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    attemptRead();
+                }
+            }, 200);
             return true;
         } catch (Exception e) {
             e.printStackTrace();
+            Log.d("DOPPLER", "start recording error");
             return false;
         }
     }
 
     public boolean pause() {
         try {
-            //microphone.stop();
+            microphone.stop();
             frequencyPlayer.pause();
             return true;
         } catch (Exception e) {
@@ -73,81 +81,44 @@ public class Doppler {
         }
     }
 
-    //returns the index of the current frequency
-    //for my cases, pass along fftSIze
-    private int freqToIndex(int fftSize) {
-        Float nyquist = (float) SAMPLE_RATE / 2;
-        return Math.round(frequency/nyquist * fftSize/2);
-    }
-
-    private int getNumSamples() {
-        return DEFAULT_SAMPLE_RATE * READ_INTERVAL / MILLI_PER_SECOND;
-    }
-
     private void attemptRead() {
-        recorded = new byte[bufferSize];
-        int nbRead = microphone.read(recorded, 0, bufferSize);
-        int newBufferSize = 1;
-        while (newBufferSize < bufferSize) {
-            newBufferSize*= 2;
+        int bufferReadResult = microphone.read(buffer, 0, bufferSize);
+
+        //volume is used later
+        float volume = 0;
+        //get higher p2 because buffer needs to be "filled out" for FFT
+        float[] fftRealArray = new float[getHigherP2(bufferReadResult)];
+        for (int i = 0; i < bufferReadResult; i++) {
+            fftRealArray[i] = (float) buffer[i] / Short.MAX_VALUE; //32768.0
+            volume += Math.abs(fftRealArray[i]);
+        }
+        volume = (float) Math.log10(volume/bufferReadResult);
+
+        //apply windowing
+        for (int i = 0; i < bufferReadResult/2; ++i) {
+            // Calculate & apply window symmetrically around center point
+            // Hanning (raised cosine) window
+            float winval = (float)(0.5+0.5*Math.cos(Math.PI*(float)i/(float)(bufferReadResult/2)));
+            if (i > bufferReadResult/2)  winval = 0;
+            fftRealArray[bufferReadResult/2 + i] *= winval;
+            fftRealArray[bufferReadResult/2 - i] *= winval;
         }
 
+        // zero out first point (not touched by odd-length window)
+        fftRealArray[0] = 0;
 
-        double[] tempDoubleArray = new double[newBufferSize];
-        final int bytesPerSample = 2; // As it is 16bit PCM
-        final double amplification = 100.0; // choose a number as you like
-        for (int index = 0, floatIndex = 0; index < nbRead - bytesPerSample + 1; index += bytesPerSample, floatIndex++) {
-            double sample = 0;
-            for (int b = 0; b < bytesPerSample; b++) {
-                int v = recorded[index + b];
-                if (b < bytesPerSample - 1 || bytesPerSample == 1) {
-                    v &= 0xFF;
-                }
-                sample += v << (b * 8);
-            }
-            double sample32 = amplification * (sample / 32768.0);
-            tempDoubleArray[floatIndex] = sample32;
+        if (fft == null) {
+            fft = new FFT(getHigherP2(bufferReadResult), SAMPLE_RATE);
         }
+        fft.forward(fftRealArray);
 
-        //pad fft array to make its size 2^n
-        Complex[] fftTempArray = new Complex[newBufferSize];
-        for (int i = 0; i < newBufferSize; i++) {
-            fftTempArray[i] = new Complex(tempDoubleArray[i], 0);
-        }
-        Complex[] fftArray = FFT.fft(fftTempArray);
+        //size is 1025 i may need to try to get it to fill out to 2048
+        Log.d("DOPPLER", "FFT SIZE IS " + fft.specSize());
 
-        // 6 - Calculate magnitude
-        double[] magnitude = new double[fftArray.length];
-        for (int i = 0; i < fftArray.length; i++)
-        {
-            Complex fft = fftArray[i];
-            magnitude[i] = Math.sqrt(fft.re() * fft.re() + fft.im() * fft.im());
-        }
+        int primaryTone = fft.freqToIndex(PRELIM_FREQ);
 
-        // 7 - Get maximum magnitude
-        double max_magnitude = -1;
-        int max_magnitude_index = -1;
-        for (int i = 0; i < bufferSize / 2; i++)
-        {
-            if (magnitude[i] > max_magnitude)
-            {
-                max_magnitude = magnitude[i];
-                max_magnitude_index = i;
-            }
-        }
-
-
-        // 8 - Calculate frequency
-        int freq = (int)(max_magnitude_index * 44100 / bufferSize);
-
-        for (int i = 0; i < newBufferSize; i++) {
-           //Log.d("DOPPLER", i + ": " + magnitude[i]);
-            Log.d("Temp double array", i + " : " + tempDoubleArray[i]);
-        }
-
-        int primaryTone = freqToIndex(2048);
-        //Log.d("Doppler", "Primary tone index: " + primaryTone + "");
-        double primaryVolume = fftArray[primaryTone].re();
+        Log.d("DOPPLER", "PRIMARY TONE INDEX IS " + primaryTone);
+        double primaryVolume = fft.getBand(primaryTone);
         //taken from the original doppler js. this ratios is empirical
         double maxVolumeRatio = 0.001;
 
@@ -156,6 +127,7 @@ public class Doppler {
 
 
         Log.d("Doppler", "Primary volume: " + primaryVolume + "");
+        Log.d("Doppler", "10k volume: " + fft.getBand(fft.freqToIndex(773))+ "");
         /*
         do {
             leftBandwidth++;
@@ -164,28 +136,16 @@ public class Doppler {
         } while (normalizedVolume > maxVolumeRatio && leftBandwidth < RELEVANT_FREQ_WINDOW);
         */
     }
-
-
-    private double[] doubleFromByteArray(byte[] audio, int read) {
-        double[] micBufferData = new double[bufferSize];
-        final int bytesPerSample = 2; // As it is 16bit PCM
-        final double amplification = 100.0; // choose a number as you like
-        for (int index = 0, floatIndex = 0; index < read - bytesPerSample + 1; index += bytesPerSample, floatIndex++) {
-            double sample = 0;
-            for (int b = 0; b < bytesPerSample; b++) {
-                int v = audio[index + b];
-                if (b < bytesPerSample - 1 || bytesPerSample == 1) {
-                    v &= 0xFF;
-                }
-                sample += v << (b * 8);
-            }
-            double sample32 = amplification * (sample / 32768.0);
-            micBufferData[floatIndex] = sample32;
-        }
-        return micBufferData;
-    }
-    //changes signed byte to unsigned
-    private int maskByte(int b) {
-        return b & 0xFF;
+    // compute nearest higher power of two
+    // see: graphics.stanford.edu/~seander/bithacks.html
+    int getHigherP2(int val)
+    {
+        val--;
+        val |= val >> 1;
+        val |= val >> 2;
+        val |= val >> 8;
+        val |= val >> 16;
+        val++;
+        return(val);
     }
 }
