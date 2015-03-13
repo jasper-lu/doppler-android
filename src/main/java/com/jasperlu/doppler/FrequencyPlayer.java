@@ -3,6 +3,9 @@ package com.jasperlu.doppler;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
+import android.os.Handler;
+import android.provider.MediaStore;
+import android.renderscript.Sampler;
 import android.util.Log;
 
 /**
@@ -11,58 +14,57 @@ import android.util.Log;
 public class FrequencyPlayer {
     private AudioTrack audioTrack;
 
-    private int mFrequency;
-    private int mInterval;
+    private int duration; // seconds
+    private final int sampleRate = 44100;
+    private int numSamples;
+    private double sample[] = new double[numSamples];
+    private double freqOfTone = 10000; // hz
 
-    private static int DEFAULT_SAMPLE_RATE = 44100;
+    private byte generatedSound[] = new byte[2 * numSamples];
+
     private static int MILLIS_PER_SECOND = 1000;
 
+    Handler handler = new Handler();
 
-    private byte[] generatedSound;
+    FrequencyPlayer(double frequency, int interval) {
+        duration = interval;
+        numSamples = sampleRate * duration / MILLIS_PER_SECOND;
+        generatedSound = new byte[2 * numSamples];
+        sample = new double[numSamples];
 
-    FrequencyPlayer(int frequency, int interval) {
-        mInterval = interval;
+        audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate, AudioFormat.CHANNEL_OUT_MONO,
+                AudioFormat.ENCODING_PCM_16BIT, generatedSound.length, AudioTrack.MODE_STATIC);
 
-        generatedSound = new byte[getNumSamples() * 2];
-
-        //16 bit because it's supported by all phones
-        audioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, DEFAULT_SAMPLE_RATE, AudioFormat.CHANNEL_OUT_STEREO,
-                AudioFormat.ENCODING_PCM_16BIT, getNumSamples() * 2, AudioTrack.MODE_STATIC);
         setFrequency(frequency);
     }
 
     //sets to new frequency and continues playing
-    public void changeFrequency(int frequency) {
+    public void changeFrequency(double frequency) {
         setFrequency(frequency);
         play();
     }
 
     //sets frequency and stops sound
-    public void setFrequency(int frequency) {
-        mFrequency = frequency;
-        generateTone();
+    public void setFrequency(double frequency) {
+        freqOfTone = frequency;
+        genTone();
+
         Log.d("FreqPlayer", "" +audioTrack.write(generatedSound, 0, generatedSound.length));
         audioTrack.setLoopPoints(0, generatedSound.length / 4, -1);
     }
 
     public void play() {
+        //16 bit because it's supported by all phones
         audioTrack.play();
     }
     public void pause() {
         audioTrack.pause();
     }
 
-    private int getNumSamples() {
-        return DEFAULT_SAMPLE_RATE * mInterval / MILLIS_PER_SECOND;
-    }
-
-    private void generateTone() {
-        Log.d("Generate tone", "Sample Rate: " + DEFAULT_SAMPLE_RATE + " numSamples " + getNumSamples());
+    void genTone(){
         // fill out the array
-        int numSamples = getNumSamples();
-        double[] sample = new double[numSamples];
         for (int i = 0; i < numSamples; ++i) {
-            sample[i] = Math.sin(2 * Math.PI * i / (DEFAULT_SAMPLE_RATE/mFrequency));
+            sample[i] = Math.sin(2 * Math.PI * i / (sampleRate/freqOfTone));
         }
 
         // convert to 16 bit pcm sound array
@@ -74,6 +76,7 @@ public class FrequencyPlayer {
             // in 16 bit wav PCM, first byte is the low order byte
             generatedSound[idx++] = (byte) (val & 0x00ff);
             generatedSound[idx++] = (byte) ((val & 0xff00) >>> 8);
+
         }
     }
 

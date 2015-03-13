@@ -20,7 +20,7 @@ import com.jasperlu.doppler.FFT.FFT;
  * http://stackoverflow.com/questions/18652000/record-audio-in-java-and-determine-real-time-if-a-tone-of-x-frequency-was-played
  */
 public class Doppler {
-    public static final int PRELIM_FREQ = 9957;
+    public static final int PRELIM_FREQ = 20000;
     public static final int DEFAULT_SAMPLE_RATE = 44100;
     public static final int RELEVANT_FREQ_WINDOW = 33;
     //in milliseconds
@@ -39,8 +39,8 @@ public class Doppler {
 
     public Doppler() {
         //write a check to see if stereo is supported
-        //bufferSize = AudioTrack.getMinBufferSize(DEFAULT_SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
-        bufferSize = 4096;
+        bufferSize = AudioTrack.getMinBufferSize(DEFAULT_SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        //bufferSize = 4096;
         Log.d("BUEFFER SIZE IS ", bufferSize + "");
         frequency = PRELIM_FREQ;
 
@@ -52,9 +52,9 @@ public class Doppler {
 
     public boolean start() {
         try {
-            microphone.startRecording();
+            //microphone.startRecording();
             frequencyPlayer.play();
-            attemptRead();
+            //attemptRead();
             return true;
         } catch (Exception e) {
             e.printStackTrace();
@@ -64,7 +64,7 @@ public class Doppler {
 
     public boolean pause() {
         try {
-            microphone.stop();
+            //microphone.stop();
             frequencyPlayer.pause();
             return true;
         } catch (Exception e) {
@@ -87,21 +87,41 @@ public class Doppler {
     private void attemptRead() {
         recorded = new byte[bufferSize];
         int nbRead = microphone.read(recorded, 0, bufferSize);
-
-        double[] tempDoubleArray = doubleFromByteArray(recorded, nbRead);
-
-        Complex[] fftTempArray = new Complex[bufferSize];
-        for (int i = 0; i < bufferSize; i++) {
-            fftTempArray[i] = new Complex(tempDoubleArray[i], 0);
+        int newBufferSize = 1;
+        while (newBufferSize < bufferSize) {
+            newBufferSize*= 2;
         }
 
+
+        double[] tempDoubleArray = new double[newBufferSize];
+        final int bytesPerSample = 2; // As it is 16bit PCM
+        final double amplification = 100.0; // choose a number as you like
+        for (int index = 0, floatIndex = 0; index < nbRead - bytesPerSample + 1; index += bytesPerSample, floatIndex++) {
+            double sample = 0;
+            for (int b = 0; b < bytesPerSample; b++) {
+                int v = recorded[index + b];
+                if (b < bytesPerSample - 1 || bytesPerSample == 1) {
+                    v &= 0xFF;
+                }
+                sample += v << (b * 8);
+            }
+            double sample32 = amplification * (sample / 32768.0);
+            tempDoubleArray[floatIndex] = sample32;
+        }
+
+        //pad fft array to make its size 2^n
+        Complex[] fftTempArray = new Complex[newBufferSize];
+        for (int i = 0; i < newBufferSize; i++) {
+            fftTempArray[i] = new Complex(tempDoubleArray[i], 0);
+        }
         Complex[] fftArray = FFT.fft(fftTempArray);
 
         // 6 - Calculate magnitude
-        double[] magnitude = new double[bufferSize / 2];
-        for (int i = 0; i < (bufferSize / 2); i++)
+        double[] magnitude = new double[fftArray.length];
+        for (int i = 0; i < fftArray.length; i++)
         {
-            magnitude[i] = Math.sqrt(fftArray[i*2].re() * fftArray[i*2].re() + fftArray[i*2].im() * fftArray[i*2].im());
+            Complex fft = fftArray[i];
+            magnitude[i] = Math.sqrt(fft.re() * fft.re() + fft.im() * fft.im());
         }
 
         // 7 - Get maximum magnitude
@@ -119,7 +139,11 @@ public class Doppler {
 
         // 8 - Calculate frequency
         int freq = (int)(max_magnitude_index * 44100 / bufferSize);
-        Log.d("DOPPLER", "MAX MAGNITUDE IS " + freq);
+
+        for (int i = 0; i < newBufferSize; i++) {
+           //Log.d("DOPPLER", i + ": " + magnitude[i]);
+            Log.d("Temp double array", i + " : " + tempDoubleArray[i]);
+        }
 
         int primaryTone = freqToIndex(2048);
         //Log.d("Doppler", "Primary tone index: " + primaryTone + "");
