@@ -31,6 +31,7 @@ public class Doppler {
 
 
     private short[] buffer;
+    private float[] fftRealArray;
     private int bufferSize = 2048;
 
     com.jasperlu.doppler.FFT.FFT fft;
@@ -47,27 +48,36 @@ public class Doppler {
         microphone = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, DEFAULT_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
 
+        //init fftrealarray
         //fft = new com.jasperlu.doppler.FFT2.FFT(bufferSize, SAMPLE_RATE);
     }
 
     public boolean start() {
         frequencyPlayer.play();
+        boolean startedRecording = false;
         try {
             //you might get an error here if another app hasn't released the microphone
             microphone.startRecording();
-
             new Handler().postDelayed(new Runnable() {
                 @Override
                 public void run() {
                     attemptRead();
                 }
             }, 200);
-            return true;
+            startedRecording = true;
         } catch (Exception e) {
             e.printStackTrace();
             Log.d("DOPPLER", "start recording error");
             return false;
         }
+        if (startedRecording) {
+            int bufferReadResult = microphone.read(buffer, 0, bufferSize);
+            bufferReadResult = getHigherP2(bufferReadResult);
+            //get higher p2 because buffer needs to be "filled out" for FFT
+            fftRealArray = new float[getHigherP2(bufferReadResult)];
+            fft = new FFT(getHigherP2(bufferReadResult), SAMPLE_RATE);
+        }
+        return true;
     }
 
     public boolean pause() {
@@ -84,15 +94,9 @@ public class Doppler {
     private void attemptRead() {
         int bufferReadResult = microphone.read(buffer, 0, bufferSize);
 
-        //volume is used later
-        float volume = 0;
-        //get higher p2 because buffer needs to be "filled out" for FFT
-        float[] fftRealArray = new float[getHigherP2(bufferReadResult)];
         for (int i = 0; i < bufferReadResult; i++) {
             fftRealArray[i] = (float) buffer[i] / Short.MAX_VALUE; //32768.0
-            volume += Math.abs(fftRealArray[i]);
         }
-        volume = (float) Math.log10(volume/bufferReadResult);
 
         //apply windowing
         for (int i = 0; i < bufferReadResult/2; ++i) {
@@ -107,9 +111,6 @@ public class Doppler {
         // zero out first point (not touched by odd-length window)
         fftRealArray[0] = 0;
 
-        if (fft == null) {
-            fft = new FFT(getHigherP2(bufferReadResult), SAMPLE_RATE);
-        }
         fft.forward(fftRealArray);
 
         //size is 1025 i may need to try to get it to fill out to 2048
@@ -122,19 +123,26 @@ public class Doppler {
         //taken from the original doppler js. this ratios is empirical
         double maxVolumeRatio = 0.001;
 
-        int leftBandwidth = 0;
-        int normalizedVolume = 0;
+        int leftBandwidth = 0, rightBandwidth = 0;
+        double normalizedVolume = 0;
 
 
         Log.d("Doppler", "Primary volume: " + primaryVolume + "");
         Log.d("Doppler", "10k volume: " + fft.getBand(fft.freqToIndex(773))+ "");
-        /*
+
         do {
             leftBandwidth++;
-            short volume = recorded[primaryTone - leftBandwidth];
+            double volume = fft.getBand(primaryTone - leftBandwidth);
             normalizedVolume = volume/primaryVolume;
         } while (normalizedVolume > maxVolumeRatio && leftBandwidth < RELEVANT_FREQ_WINDOW);
-        */
+        Log.d("Left Bandwidth", leftBandwidth+ "");
+
+        do {
+            rightBandwidth++;
+            double volume = fft.getBand(primaryTone + rightBandwidth);
+            normalizedVolume = volume/primaryVolume;
+        } while (normalizedVolume > maxVolumeRatio && rightBandwidth < RELEVANT_FREQ_WINDOW);
+        Log.d("Right Bandwidth", rightBandwidth + "");
     }
     // compute nearest higher power of two
     // see: graphics.stanford.edu/~seander/bithacks.html
