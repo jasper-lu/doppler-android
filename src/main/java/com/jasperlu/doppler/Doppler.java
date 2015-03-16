@@ -8,11 +8,6 @@ import android.util.Log;
 
 import com.jasperlu.doppler.FFT.FFT;
 
-import java.util.Timer;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-
 /**
  * Created by Jasper on 3/11/2015.
  *
@@ -20,27 +15,31 @@ import java.util.concurrent.TimeUnit;
  * http://stackoverflow.com/questions/18652000/record-audio-in-java-and-determine-real-time-if-a-tone-of-x-frequency-was-played
  */
 public class Doppler {
+    public interface OnReadCallback {
+        //bandwidths are the number to the left/to the right from the pilot tone the shift was
+        public void onBandwidthRead(int leftBandwidth, int rightBandwidth);
+        //for testing/graphing as well
+        public void onBinsRead(double[] bins);
+    }
+
+
     public static final float PRELIM_FREQ = 20000;
     public static final int DEFAULT_SAMPLE_RATE = 44100;
     public static final int RELEVANT_FREQ_WINDOW = 33;
     //in milliseconds
     public static final int INTERVAL = 3000;
-    public static final int READ_INTERVAL = 200;
-    private static final int MILLI_PER_SECOND = 1000;
 
     private AudioRecord microphone;
     private FrequencyPlayer frequencyPlayer;
     private int SAMPLE_RATE = DEFAULT_SAMPLE_RATE;
 
     private float frequency;
-    private ScheduledExecutorService scheduler;
-
 
     private short[] buffer;
     private float[] fftRealArray;
     private int bufferSize = 2048;
 
-    com.jasperlu.doppler.FFT.FFT fft;
+    FFT fft;
 
     public Doppler() {
         //write a check to see if stereo is supported
@@ -71,7 +70,7 @@ public class Doppler {
                 public void run() {
                     optimizeFrequency(19000, 21000);
                 }
-            }, 200);
+            }, 1000);
 
             startedRecording = true;
         } catch (Exception e) {
@@ -90,13 +89,6 @@ public class Doppler {
     }
 
     public void startReading() {
-        scheduler = Executors.newSingleThreadScheduledExecutor();
-        scheduler.scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                attemptRead();
-            }
-        }, 0, 500, TimeUnit.MILLISECONDS);
     }
 
     public boolean pause() {
@@ -150,6 +142,7 @@ public class Doppler {
         fft.forward(fftRealArray);
     }
 
+    //mostly here for testing purposes at this point
     public double[] attemptRead() {
         readAndFFT();
 
@@ -191,7 +184,7 @@ public class Doppler {
         } while (normalizedVolume > maxVolumeRatio && rightBandwidth < RELEVANT_FREQ_WINDOW);
 
 
-        if (leftBandwidth > 8 && rightBandwidth > 8) {
+        if (leftBandwidth > 4 && rightBandwidth > 4) {
             Log.d("Bandwidth", "MOTION DETECTED");
             Log.d("Left Bandwidth", leftBandwidth+ " : " + fft.getBand(primaryTone - leftBandwidth));
             Log.d("Right Bandwidth", rightBandwidth+ " : " + fft.getBand(primaryTone + rightBandwidth));
