@@ -39,6 +39,10 @@ public class Doppler {
     private float[] fftRealArray;
     private int bufferSize = 2048;
 
+    private Handler mHandler;
+    private Runnable mRunnable;
+    private boolean repeat;
+
     FFT fft;
 
     public Doppler() {
@@ -53,22 +57,23 @@ public class Doppler {
         microphone = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, DEFAULT_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
 
-        //init fftrealarray
-        //fft = new com.jasperlu.doppler.FFT2.FFT(bufferSize, SAMPLE_RATE);
+        mHandler = new Handler();
     }
 
-    public boolean start() {
+    public boolean start(final OnReadCallback callback) {
         frequencyPlayer.play();
         boolean startedRecording = false;
         try {
             //you might get an error here if another app hasn't released the microphone
             microphone.startRecording();
             //startReading();
+            repeat = true;
 
             new Handler().postDelayed(new Runnable() {
                 @Override
                 public void run() {
                     optimizeFrequency(19000, 21000);
+                    startReading(callback);
                 }
             }, 1000);
 
@@ -88,14 +93,67 @@ public class Doppler {
         return true;
     }
 
-    public void startReading() {
+    public void startReading(final OnReadCallback callback) {
+        readAndFFT();
+
+        int primaryTone = fft.freqToIndex(frequency);
+
+        double primaryVolume = fft.getBand(primaryTone);
+        //taken from the soundwave paper. frequency bins are scanned until the amp drops below
+        // 10% of the primary tone peak
+        double maxVolumeRatio = 0.01;
+
+        int leftBandwidth = 0, rightBandwidth = 0;
+        double normalizedVolume = 0;
+        //Log.d("Doppler", "Primary volume: " + primaryVolume + "");
+
+        int max = 0;
+        for (int i = 0; i < fft.specSize(); ++i) {
+            if (fft.getBand(i) > fft.getBand(max)) {
+                max = i;
+            }
+        }
+        if (max != 929) {
+            Log.d("Doppler", "Highest Freq Bin Mag is " + fft.getBand(max));
+            Log.d("Doppler", "Highest Freq Bin " + max);
+        }
+
+        do {
+            leftBandwidth++;
+            double volume = fft.getBand(primaryTone - leftBandwidth);
+            normalizedVolume = volume/primaryVolume;
+        } while (normalizedVolume > maxVolumeRatio && leftBandwidth < RELEVANT_FREQ_WINDOW);
+
+        do {
+            rightBandwidth++;
+            double volume = fft.getBand(primaryTone + rightBandwidth);
+            normalizedVolume = volume/primaryVolume;
+        } while (normalizedVolume > maxVolumeRatio && rightBandwidth < RELEVANT_FREQ_WINDOW);
+
+        callback.onBandwidthRead(leftBandwidth, rightBandwidth);
+
+        double[] array = new double[1025];
+        for (int i = 0; i < fft.specSize(); ++i) {
+            array[i] = fft.getBand(i);
+        }
+
+        callback.onBinsRead(array);
+
+        if (repeat) {
+            mHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    startReading(callback);
+                }
+            });
+        }
     }
 
     public boolean pause() {
         try {
-            //scheduler.shutdownNow();
             microphone.stop();
             frequencyPlayer.pause();
+            repeat = false;
             return true;
         } catch (Exception e) {
             e.printStackTrace();
