@@ -8,6 +8,11 @@ import android.util.Log;
 
 import com.jasperlu.doppler.FFT.FFT;
 
+import java.util.Timer;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
 /**
  * Created by Jasper on 3/11/2015.
  *
@@ -15,7 +20,7 @@ import com.jasperlu.doppler.FFT.FFT;
  * http://stackoverflow.com/questions/18652000/record-audio-in-java-and-determine-real-time-if-a-tone-of-x-frequency-was-played
  */
 public class Doppler {
-    public static final int PRELIM_FREQ = 20000;
+    public static final float PRELIM_FREQ = 20000;
     public static final int DEFAULT_SAMPLE_RATE = 44100;
     public static final int RELEVANT_FREQ_WINDOW = 33;
     //in milliseconds
@@ -27,7 +32,8 @@ public class Doppler {
     private FrequencyPlayer frequencyPlayer;
     private int SAMPLE_RATE = DEFAULT_SAMPLE_RATE;
 
-    private int frequency;
+    private float frequency;
+    private ScheduledExecutorService scheduler;
 
 
     private short[] buffer;
@@ -58,12 +64,15 @@ public class Doppler {
         try {
             //you might get an error here if another app hasn't released the microphone
             microphone.startRecording();
+            //startReading();
+
             new Handler().postDelayed(new Runnable() {
                 @Override
                 public void run() {
-                    attemptRead();
+                    optimizeFrequency(19000, 21000);
                 }
             }, 200);
+
             startedRecording = true;
         } catch (Exception e) {
             e.printStackTrace();
@@ -80,8 +89,19 @@ public class Doppler {
         return true;
     }
 
+    public void startReading() {
+        scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.scheduleAtFixedRate(new Runnable() {
+            @Override
+            public void run() {
+                attemptRead();
+            }
+        }, 0, 500, TimeUnit.MILLISECONDS);
+    }
+
     public boolean pause() {
         try {
+            //scheduler.shutdownNow();
             microphone.stop();
             frequencyPlayer.pause();
             return true;
@@ -91,7 +111,23 @@ public class Doppler {
         }
     }
 
-    private void attemptRead() {
+    public void optimizeFrequency(int minFreq, int maxFreq) {
+        readAndFFT();
+        int minInd = fft.freqToIndex(minFreq);
+        int maxInd = fft.freqToIndex(maxFreq);
+
+        int primaryInd = fft.freqToIndex(frequency);
+        for (int i = minInd; i <= maxInd; ++i) {
+            if (fft.getBand(i) > fft.getBand(primaryInd)) {
+                primaryInd = i;
+            }
+        }
+        frequency = fft.indexToFreq(primaryInd);
+        Log.d("NEW PRIMARY IND", fft.indexToFreq(primaryInd) + "");
+    }
+
+    public void readAndFFT() {
+
         int bufferReadResult = microphone.read(buffer, 0, bufferSize);
 
         for (int i = 0; i < bufferReadResult; i++) {
@@ -112,37 +148,64 @@ public class Doppler {
         fftRealArray[0] = 0;
 
         fft.forward(fftRealArray);
+    }
 
-        //size is 1025 i may need to try to get it to fill out to 2048
-        Log.d("DOPPLER", "FFT SIZE IS " + fft.specSize());
+    public double[] attemptRead() {
+        readAndFFT();
 
-        int primaryTone = fft.freqToIndex(PRELIM_FREQ);
+        int primaryTone = fft.freqToIndex(frequency);
 
-        Log.d("DOPPLER", "PRIMARY TONE INDEX IS " + primaryTone);
         double primaryVolume = fft.getBand(primaryTone);
-        //taken from the original doppler js. this ratios is empirical
-        double maxVolumeRatio = 0.001;
+        //taken from the soundwave paper. frequency bins are scanned until the amp drops below
+        // 10% of the primary tone peak
+        double maxVolumeRatio = 0.01;
 
         int leftBandwidth = 0, rightBandwidth = 0;
         double normalizedVolume = 0;
 
 
-        Log.d("Doppler", "Primary volume: " + primaryVolume + "");
-        Log.d("Doppler", "10k volume: " + fft.getBand(fft.freqToIndex(773))+ "");
+        //Log.d("Doppler", "Primary volume: " + primaryVolume + "");
+
+        int max = 0;
+        for (int i = 0; i < fft.specSize(); ++i) {
+            if (fft.getBand(i) > fft.getBand(max)) {
+                max = i;
+            }
+        }
+        if (max != 929) {
+            Log.d("Doppler", "Highest Freq Bin Mag is " + fft.getBand(max));
+            Log.d("Doppler", "Highest Freq Bin " + max);
+        }
 
         do {
             leftBandwidth++;
             double volume = fft.getBand(primaryTone - leftBandwidth);
             normalizedVolume = volume/primaryVolume;
         } while (normalizedVolume > maxVolumeRatio && leftBandwidth < RELEVANT_FREQ_WINDOW);
-        Log.d("Left Bandwidth", leftBandwidth+ "");
+
 
         do {
             rightBandwidth++;
             double volume = fft.getBand(primaryTone + rightBandwidth);
             normalizedVolume = volume/primaryVolume;
         } while (normalizedVolume > maxVolumeRatio && rightBandwidth < RELEVANT_FREQ_WINDOW);
-        Log.d("Right Bandwidth", rightBandwidth + "");
+
+
+        if (leftBandwidth > 8 && rightBandwidth > 8) {
+            Log.d("Bandwidth", "MOTION DETECTED");
+            Log.d("Left Bandwidth", leftBandwidth+ " : " + fft.getBand(primaryTone - leftBandwidth));
+            Log.d("Right Bandwidth", rightBandwidth+ " : " + fft.getBand(primaryTone + rightBandwidth));
+            int movement = Math.min(10, Math.max(-10, rightBandwidth - leftBandwidth));
+
+            Log.d("Move by", "BANDWIDTH DIFF " + movement);
+        }
+
+        double[] array = new double[1025];
+        for (int i = 0; i < fft.specSize(); ++i) {
+            array[i] = fft.getBand(i);
+        }
+
+        return array;
     }
     // compute nearest higher power of two
     // see: graphics.stanford.edu/~seander/bithacks.html
