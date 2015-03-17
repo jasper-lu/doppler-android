@@ -37,7 +37,8 @@ public class Doppler {
 
     //modded from the soundwave paper. frequency bins are scanned until the amp drops below
     // 1% of the primary tone peak
-    private static final double maxVolumeRatio = 0.01;
+    private static final double MAX_VOL_RATIO = 0.1;
+    private static final double SECOND_PEAK_RATIO = 0.3;
 
     private AudioRecord microphone;
     private FrequencyPlayer frequencyPlayer;
@@ -118,25 +119,72 @@ public class Doppler {
 
         int primaryTone = fft.freqToIndex(frequency);
 
-
-        int leftBandwidth = 0, rightBandwidth = 0;
         double normalizedVolume = 0;
 
         //flatten peak to minima to make detection more consistent
         flattenToMinima();
 
         double primaryVolume = fft.getBand(primaryTone);
+
+        int leftBandwidth = 0;
+
         do {
             leftBandwidth++;
             double volume = fft.getBand(primaryTone - leftBandwidth);
             normalizedVolume = volume/primaryVolume;
-        } while (normalizedVolume > maxVolumeRatio && leftBandwidth < RELEVANT_FREQ_WINDOW);
+        } while (normalizedVolume > MAX_VOL_RATIO && leftBandwidth < RELEVANT_FREQ_WINDOW);
+
+
+        //secondary bandwidths are for looking past the first minima to search for "split off" peaks, as per the paper
+        int secondScanFlag = 0;
+        int secondaryLeftBandwidth = leftBandwidth;
+
+        //second scan
+        do {
+            secondaryLeftBandwidth++;
+            double volume = fft.getBand(primaryTone - secondaryLeftBandwidth);
+            normalizedVolume = volume/primaryVolume;
+
+            if (normalizedVolume > SECOND_PEAK_RATIO) {
+                secondScanFlag = 1;
+            }
+
+            if (secondScanFlag == 1 && normalizedVolume < MAX_VOL_RATIO) {
+                break;
+            }
+        } while (secondaryLeftBandwidth < RELEVANT_FREQ_WINDOW);
+
+        if (secondScanFlag == 1) {
+            leftBandwidth = secondaryLeftBandwidth;
+        }
+
+        int rightBandwidth = 0;
 
         do {
             rightBandwidth++;
             double volume = fft.getBand(primaryTone + rightBandwidth);
             normalizedVolume = volume/primaryVolume;
-        } while (normalizedVolume > maxVolumeRatio && rightBandwidth < RELEVANT_FREQ_WINDOW);
+        } while (normalizedVolume > MAX_VOL_RATIO && rightBandwidth < RELEVANT_FREQ_WINDOW);
+
+        secondScanFlag = 0;
+        int secondaryRightBandwidth = 0;
+        do {
+            secondaryRightBandwidth++;
+            double volume = fft.getBand(primaryTone + secondaryRightBandwidth);
+            normalizedVolume = volume/primaryVolume;
+
+            if (normalizedVolume > SECOND_PEAK_RATIO) {
+                secondScanFlag = 1;
+            }
+
+            if (secondScanFlag == 1 && normalizedVolume < MAX_VOL_RATIO) {
+                break;
+            }
+        } while (secondaryRightBandwidth < RELEVANT_FREQ_WINDOW);
+
+        if (secondScanFlag == 1) {
+            rightBandwidth = secondaryRightBandwidth;
+        }
 
         callback.onBandwidthRead(leftBandwidth, rightBandwidth);
 
