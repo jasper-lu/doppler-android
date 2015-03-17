@@ -221,64 +221,6 @@ public class Doppler {
         fft.forward(fftRealArray);
     }
 
-    //mostly here for testing purposes at this point
-    public double[] attemptRead() {
-        readAndFFT();
-
-        int primaryTone = fft.freqToIndex(frequency);
-
-        double primaryVolume = fft.getBand(primaryTone);
-        //taken from the soundwave paper. frequency bins are scanned until the amp drops below
-        // 10% of the primary tone peak
-        double maxVolumeRatio = 0.01;
-
-        int leftBandwidth = 0, rightBandwidth = 0;
-        double normalizedVolume = 0;
-
-
-        //Log.d("Doppler", "Primary volume: " + primaryVolume + "");
-
-        int max = 0;
-        for (int i = 0; i < fft.specSize(); ++i) {
-            if (fft.getBand(i) > fft.getBand(max)) {
-                max = i;
-            }
-        }
-        if (max != 929) {
-            Log.d("Doppler", "Highest Freq Bin Mag is " + fft.getBand(max));
-            Log.d("Doppler", "Highest Freq Bin " + max);
-        }
-
-        do {
-            leftBandwidth++;
-            double volume = fft.getBand(primaryTone - leftBandwidth);
-            normalizedVolume = volume/primaryVolume;
-        } while (normalizedVolume > maxVolumeRatio && leftBandwidth < RELEVANT_FREQ_WINDOW);
-
-
-        do {
-            rightBandwidth++;
-            double volume = fft.getBand(primaryTone + rightBandwidth);
-            normalizedVolume = volume/primaryVolume;
-        } while (normalizedVolume > maxVolumeRatio && rightBandwidth < RELEVANT_FREQ_WINDOW);
-
-
-        if (leftBandwidth > 4 && rightBandwidth > 4) {
-            Log.d("Bandwidth", "MOTION DETECTED");
-            Log.d("Left Bandwidth", leftBandwidth+ " : " + fft.getBand(primaryTone - leftBandwidth));
-            Log.d("Right Bandwidth", rightBandwidth+ " : " + fft.getBand(primaryTone + rightBandwidth));
-            int movement = Math.min(10, Math.max(-10, rightBandwidth - leftBandwidth));
-
-            Log.d("Move by", "BANDWIDTH DIFF " + movement);
-        }
-
-        double[] array = new double[1025];
-        for (int i = 0; i < fft.specSize(); ++i) {
-            array[i] = fft.getBand(i);
-        }
-
-        return array;
-    }
     // compute nearest higher power of two
     // see: graphics.stanford.edu/~seander/bithacks.html
     int getHigherP2(int val)
