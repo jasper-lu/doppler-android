@@ -14,7 +14,7 @@ import android.util.Log;
 public class FrequencyPlayer {
     private AudioTrack audioTrack;
 
-    private int duration; // seconds
+    private final int duration = 5000; // milliseconds
     private final int sampleRate = 44100;
     private int numSamples;
     private double sample[] = new double[numSamples];
@@ -26,8 +26,7 @@ public class FrequencyPlayer {
 
     Handler handler = new Handler();
 
-    FrequencyPlayer(double frequency, int interval) {
-        duration = interval;
+    FrequencyPlayer(double frequency) {
         numSamples = sampleRate * duration / MILLIS_PER_SECOND;
         generatedSound = new byte[2 * numSamples];
         sample = new double[numSamples];

@@ -22,28 +22,40 @@ public class Doppler {
         public void onBinsRead(double[] bins);
     }
 
-
+    //prelimiary frequency stuff
     public static final float PRELIM_FREQ = 20000;
-    public static final int DEFAULT_SAMPLE_RATE = 44100;
+    public static final int PRELIM_FREQ_INDEX = 20000;
+    public static final int MIN_FREQ = 19000;
+    public static final int MAX_FREQ = 21000;
+
+    //precalculated to optimize
+    public static final int MIN_FREQ_INDEX = 882;
+    public static final int MAX_FREQ_INDEX = 975;
+
     public static final int RELEVANT_FREQ_WINDOW = 33;
-    //in milliseconds
-    public static final int INTERVAL = 3000;
+    public static final int DEFAULT_SAMPLE_RATE = 44100;
+
+    //modded from the soundwave paper. frequency bins are scanned until the amp drops below
+    // 1% of the primary tone peak
+    private static final double maxVolumeRatio = 0.01;
 
     private AudioRecord microphone;
     private FrequencyPlayer frequencyPlayer;
     private int SAMPLE_RATE = DEFAULT_SAMPLE_RATE;
 
     private float frequency;
+    private int freqIndex;
 
     private short[] buffer;
     private float[] fftRealArray;
     private int bufferSize = 2048;
 
     private Handler mHandler;
-    private Runnable mRunnable;
     private boolean repeat;
 
     FFT fft;
+    //to smooth out the top
+    private float primaryMinima;
 
     public Doppler() {
         //write a check to see if stereo is supported
@@ -51,13 +63,19 @@ public class Doppler {
         buffer = new short[bufferSize];
         Log.d("BUEFFER SIZE IS ", bufferSize + "");
         frequency = PRELIM_FREQ;
+        freqIndex = PRELIM_FREQ_INDEX;
 
-        frequencyPlayer = new FrequencyPlayer(PRELIM_FREQ, INTERVAL);
+        frequencyPlayer = new FrequencyPlayer(PRELIM_FREQ);
 
         microphone = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, DEFAULT_SAMPLE_RATE,
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
 
         mHandler = new Handler();
+    }
+
+    private void setFrequency(float frequency) {
+        this.frequency = frequency;
+        this.freqIndex = fft.freqToIndex(frequency);
     }
 
     public boolean start(final OnReadCallback callback) {
@@ -72,7 +90,9 @@ public class Doppler {
             new Handler().postDelayed(new Runnable() {
                 @Override
                 public void run() {
-                    optimizeFrequency(19000, 21000);
+                    optimizeFrequency(MIN_FREQ, MAX_FREQ);
+                    //assuming fft.forward was already called;
+                    primaryMinima = fft.getBand(freqIndex);
                     startReading(callback);
                 }
             }, 1000);
@@ -98,26 +118,14 @@ public class Doppler {
 
         int primaryTone = fft.freqToIndex(frequency);
 
-        double primaryVolume = fft.getBand(primaryTone);
-        //taken from the soundwave paper. frequency bins are scanned until the amp drops below
-        // 10% of the primary tone peak
-        double maxVolumeRatio = 0.01;
 
         int leftBandwidth = 0, rightBandwidth = 0;
         double normalizedVolume = 0;
-        //Log.d("Doppler", "Primary volume: " + primaryVolume + "");
 
-        int max = 0;
-        for (int i = 0; i < fft.specSize(); ++i) {
-            if (fft.getBand(i) > fft.getBand(max)) {
-                max = i;
-            }
-        }
-        if (max != 929) {
-            Log.d("Doppler", "Highest Freq Bin Mag is " + fft.getBand(max));
-            Log.d("Doppler", "Highest Freq Bin " + max);
-        }
+        //flatten peak to minima to make detection more consistent
+        flattenToMinima();
 
+        double primaryVolume = fft.getBand(primaryTone);
         do {
             leftBandwidth++;
             double volume = fft.getBand(primaryTone - leftBandwidth);
@@ -132,7 +140,7 @@ public class Doppler {
 
         callback.onBandwidthRead(leftBandwidth, rightBandwidth);
 
-        double[] array = new double[1025];
+        double[] array = new double[fft.specSize()];
         for (int i = 0; i < fft.specSize(); ++i) {
             array[i] = fft.getBand(i);
         }
@@ -146,6 +154,19 @@ public class Doppler {
                     startReading(callback);
                 }
             });
+        }
+    }
+
+    public void flattenToMinima() {
+        if (fft.getBand(freqIndex) < primaryMinima && fft.getBand(freqIndex) >= 10) {
+            primaryMinima = fft.getBand(freqIndex);
+            Log.d("NEW PRIMARY MINIMA", primaryMinima + "");
+        }
+        for (int i = MIN_FREQ_INDEX; i < MAX_FREQ_INDEX; ++i) {
+            //apply smoothing
+            if (fft.getBand(i) > primaryMinima) {
+                fft.setBand(i, primaryMinima);
+            }
         }
     }
 
@@ -172,7 +193,7 @@ public class Doppler {
                 primaryInd = i;
             }
         }
-        frequency = fft.indexToFreq(primaryInd);
+        setFrequency(fft.indexToFreq(primaryInd));
         Log.d("NEW PRIMARY IND", fft.indexToFreq(primaryInd) + "");
     }
 
