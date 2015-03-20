@@ -40,6 +40,9 @@ public class Doppler {
     private static final double MAX_VOL_RATIO = 0.1;
     private static final double SECOND_PEAK_RATIO = 0.3;
 
+    //I want to add smoothing
+    private static final float SMOOTHING_TIME_CONSTANT = 0.5f;
+
     private AudioRecord microphone;
     private FrequencyPlayer frequencyPlayer;
     private int SAMPLE_RATE = DEFAULT_SAMPLE_RATE;
@@ -49,6 +52,8 @@ public class Doppler {
 
     private short[] buffer;
     private float[] fftRealArray;
+    //holds the freqs of the previous iteration
+    private float[] oldFreqs;
     private int bufferSize = 2048;
 
     private Handler mHandler;
@@ -120,9 +125,6 @@ public class Doppler {
         int primaryTone = fft.freqToIndex(frequency);
 
         double normalizedVolume = 0;
-
-        //flatten peak to minima to make detection more consistent
-        flattenToMinima();
 
         double primaryVolume = fft.getBand(primaryTone);
 
@@ -205,6 +207,13 @@ public class Doppler {
         }
     }
 
+    public void smoothOutFreqs() {
+        for (int i = 0; i <= fft.specSize(); ++i) {
+            float smoothedOutMag = SMOOTHING_TIME_CONSTANT * fft.getBand(i) + (1 - SMOOTHING_TIME_CONSTANT) * oldFreqs[i];
+            fft.setBand(i, smoothedOutMag);
+        }
+    }
+
     public void flattenToMinima() {
         if (fft.getBand(freqIndex) < primaryMinima && fft.getBand(freqIndex) >= 10) {
             primaryMinima = fft.getBand(freqIndex);
@@ -245,7 +254,12 @@ public class Doppler {
         Log.d("NEW PRIMARY IND", fft.indexToFreq(primaryInd) + "");
     }
 
+    //reads the buffer into fftrealarray, applies windowing, then fft and smoothing
     public void readAndFFT() {
+        //copy into old freqs array
+        for (int i = 0; i < fft.specSize(); ++i) {
+            oldFreqs[i] = fft.getBand(i);
+        }
 
         int bufferReadResult = microphone.read(buffer, 0, bufferSize);
 
@@ -267,6 +281,9 @@ public class Doppler {
         fftRealArray[0] = 0;
 
         fft.forward(fftRealArray);
+
+        //apply smoothing
+        smoothOutFreqs();
     }
 
     // compute nearest higher power of two
