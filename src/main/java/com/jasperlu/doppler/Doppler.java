@@ -37,8 +37,9 @@ public class Doppler {
 
     //modded from the soundwave paper. frequency bins are scanned until the amp drops below
     // 1% of the primary tone peak
-    private static final double MAX_VOL_RATIO = 0.1;
+    private static final double MAX_VOL_RATIO_DEFAULT = 0.1;
     private static final double SECOND_PEAK_RATIO = 0.3;
+    public static double maxVolRatio = MAX_VOL_RATIO_DEFAULT;
 
     //I want to add smoothing
     private static final float SMOOTHING_TIME_CONSTANT = 0.5f;
@@ -134,7 +135,7 @@ public class Doppler {
             leftBandwidth++;
             double volume = fft.getBand(primaryTone - leftBandwidth);
             normalizedVolume = volume/primaryVolume;
-        } while (normalizedVolume > MAX_VOL_RATIO && leftBandwidth < RELEVANT_FREQ_WINDOW);
+        } while (normalizedVolume > maxVolRatio && leftBandwidth < RELEVANT_FREQ_WINDOW);
 
 
         //secondary bandwidths are for looking past the first minima to search for "split off" peaks, as per the paper
@@ -151,7 +152,7 @@ public class Doppler {
                 secondScanFlag = 1;
             }
 
-            if (secondScanFlag == 1 && normalizedVolume < MAX_VOL_RATIO) {
+            if (secondScanFlag == 1 && normalizedVolume < maxVolRatio ) {
                 break;
             }
         } while (secondaryLeftBandwidth < RELEVANT_FREQ_WINDOW);
@@ -166,7 +167,7 @@ public class Doppler {
             rightBandwidth++;
             double volume = fft.getBand(primaryTone + rightBandwidth);
             normalizedVolume = volume/primaryVolume;
-        } while (normalizedVolume > MAX_VOL_RATIO && rightBandwidth < RELEVANT_FREQ_WINDOW);
+        } while (normalizedVolume > maxVolRatio && rightBandwidth < RELEVANT_FREQ_WINDOW);
 
         secondScanFlag = 0;
         int secondaryRightBandwidth = 0;
@@ -179,7 +180,7 @@ public class Doppler {
                 secondScanFlag = 1;
             }
 
-            if (secondScanFlag == 1 && normalizedVolume < MAX_VOL_RATIO) {
+            if (secondScanFlag == 1 && normalizedVolume < maxVolRatio) {
                 break;
             }
         } while (secondaryRightBandwidth < RELEVANT_FREQ_WINDOW);
@@ -208,9 +209,9 @@ public class Doppler {
     }
 
     public void smoothOutFreqs() {
-        for (int i = 0; i <= fft.specSize(); ++i) {
+        for (int i = 0; i < fft.specSize(); ++i) {
             float smoothedOutMag = SMOOTHING_TIME_CONSTANT * fft.getBand(i) + (1 - SMOOTHING_TIME_CONSTANT) * oldFreqs[i];
-            fft.setBand(i, smoothedOutMag);
+            //fft.setBand(i, smoothedOutMag);
         }
     }
 
@@ -257,6 +258,9 @@ public class Doppler {
     //reads the buffer into fftrealarray, applies windowing, then fft and smoothing
     public void readAndFFT() {
         //copy into old freqs array
+        if (fft.specSize() != 0 && oldFreqs == null) {
+            oldFreqs = new float[fft.specSize()];
+        }
         for (int i = 0; i < fft.specSize(); ++i) {
             oldFreqs[i] = fft.getBand(i);
         }
