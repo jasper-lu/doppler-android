@@ -91,7 +91,10 @@ public class Doppler {
     private int previousDirection = 0;
     private int directionChanges;
     private int cyclesLeftToRead = -1;
-    private final int cyclesToRead = 4;
+    //wait this many before starting to read again
+    private int cyclesToRefresh;
+    private int directionSame;
+    private final int cyclesToRead = 5;
 
     public Doppler() {
         //write a check to see if stereo is supported
@@ -254,6 +257,12 @@ public class Doppler {
     }
 
     public void callGestureCallback(int leftBandwidth, int rightBandwidth) {
+        //early escape if need to refresh
+        if (cyclesToRefresh > 0) {
+            cyclesToRefresh--;
+            return;
+        }
+
         if (leftBandwidth > 4 || rightBandwidth > 4) {
             //Log.d("GESTURE CALLBACK", "Start of if statement");
             //implement gesture logic
@@ -261,6 +270,13 @@ public class Doppler {
             int direction = (int) signum(difference);
 
             //Log.d("GESTURE CALLBACK", "DIRECTION IS " + direction);
+            if (direction == 1) {
+                Log.d("DIRECTION", "POS");
+            } else if (direction == -1) {
+                Log.d("Direction", "NEG");
+            } else {
+                Log.d("DIrection", "none");
+            }
 
             if (direction != 0 && direction != previousDirection) {
                 //scan a 4 frame window to wait for taps or double taps
@@ -270,26 +286,26 @@ public class Doppler {
                 previousDirection = direction;
                 directionChanges++;
             }
+        }
 
-            cyclesLeftToRead--;
+        cyclesLeftToRead--;
 
-            if (cyclesLeftToRead == 0) {
-                //Log.d("GESTURE CALLBACK", "No more cycles to read. finding appropriate lsitener");
-                if (directionChanges == 1) {
-                    if (previousDirection == -1) {
-                        gestureListener.onPush();
-                    } else {
-                        gestureListener.onPull();
-                    }
-                } else if (directionChanges == 2) {
-                    gestureListener.onTap();
+        if (cyclesLeftToRead == 0) {
+            //Log.d("GESTURE CALLBACK", "No more cycles to read. finding appropriate lsitener");
+            if (directionChanges == 1) {
+                if (previousDirection == -1) {
+                    gestureListener.onPush();
                 } else {
-                    gestureListener.onDoubleTap();
+                    gestureListener.onPull();
                 }
-                cyclesLeftToRead = -1;
-                previousDirection = 0;
-                directionChanges = 0;
+            } else if (directionChanges == 2) {
+                gestureListener.onTap();
+            } else {
+                gestureListener.onDoubleTap();
             }
+            previousDirection = 0;
+            directionChanges = 0;
+            cyclesToRefresh = cyclesToRead;
         }
     }
 
