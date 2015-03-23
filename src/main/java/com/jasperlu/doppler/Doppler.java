@@ -61,8 +61,10 @@ public class Doppler {
     private boolean repeat;
 
     FFT fft;
-    //to smooth out the top
-    private float primaryMinima;
+    //to calibrate or not
+    private boolean calibrate;
+    Calibrator calibrator;
+
 
     public Doppler() {
         //write a check to see if stereo is supported
@@ -78,6 +80,8 @@ public class Doppler {
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize);
 
         mHandler = new Handler();
+
+        calibrator = new Calibrator();
     }
 
     private void setFrequency(float frequency) {
@@ -99,7 +103,6 @@ public class Doppler {
                 public void run() {
                     optimizeFrequency(MIN_FREQ, MAX_FREQ);
                     //assuming fft.forward was already called;
-                    primaryMinima = fft.getBand(freqIndex);
                     startReading(callback);
                 }
             }, 1000);
@@ -198,6 +201,12 @@ public class Doppler {
 
         callback.onBinsRead(array);
 
+        double tempVol = calibrator.calibrate(maxVolRatio, leftBandwidth, rightBandwidth);
+        if (tempVol != maxVolRatio) {
+            //Log.d("CHANGING MAX VOL RATIO", "NEW: " + tempVol);
+            maxVolRatio = tempVol;
+        }
+
         if (repeat) {
             mHandler.post(new Runnable() {
                 @Override
@@ -208,23 +217,15 @@ public class Doppler {
         }
     }
 
+    public boolean setCalibrate(boolean bool) {
+        calibrate = bool;
+        return calibrate;
+    }
+
     public void smoothOutFreqs() {
         for (int i = 0; i < fft.specSize(); ++i) {
             float smoothedOutMag = SMOOTHING_TIME_CONSTANT * fft.getBand(i) + (1 - SMOOTHING_TIME_CONSTANT) * oldFreqs[i];
-            //fft.setBand(i, smoothedOutMag);
-        }
-    }
-
-    public void flattenToMinima() {
-        if (fft.getBand(freqIndex) < primaryMinima && fft.getBand(freqIndex) >= 10) {
-            primaryMinima = fft.getBand(freqIndex);
-            Log.d("NEW PRIMARY MINIMA", primaryMinima + "");
-        }
-        for (int i = MIN_FREQ_INDEX; i < MAX_FREQ_INDEX; ++i) {
-            //apply smoothing
-            if (fft.getBand(i) > primaryMinima) {
-                fft.setBand(i, primaryMinima);
-            }
+            fft.setBand(i, smoothedOutMag);
         }
     }
 

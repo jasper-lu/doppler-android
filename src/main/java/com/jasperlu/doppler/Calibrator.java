@@ -1,5 +1,7 @@
 package com.jasperlu.doppler;
 
+import android.util.Log;
+
 /**
  * Created by Jasper on 3/21/2015.
  */
@@ -30,11 +32,12 @@ public class Calibrator {
 
         iteration = ++iteration % ITERATION_CYCLES;
         if (iteration == 0) {
+            //Log.d("Direction changes", directionChanges + "");
             if (directionChanges >= UP_THRESHOLD) {
                 maxVolumeRatio = maxVolumeRatio * UP_AMOUNT;
             }
             if (directionChanges == DOWN_THRESHOLD) {
-                maxVolumeRatio = maxVolumeRatio * DOWN_THRESHOLD;
+                maxVolumeRatio = maxVolumeRatio * DOWN_AMOUNT;
             }
 
             maxVolumeRatio = min(MAX_RATIO, maxVolumeRatio);
