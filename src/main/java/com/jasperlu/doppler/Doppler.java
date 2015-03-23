@@ -6,6 +6,8 @@ import android.media.MediaRecorder;
 import android.os.Handler;
 import android.util.Log;
 
+import static java.lang.Math.signum;
+
 import com.jasperlu.doppler.FFT.FFT;
 
 /**
@@ -22,7 +24,7 @@ public class Doppler {
         public void onBinsRead(double[] bins);
     }
     //base gestures. can extend to have more
-    public interface OnGestureCallback {
+    public interface OnGestureListener {
         //swipe towards
         public void onPush();
         //swipe away
@@ -39,9 +41,6 @@ public class Doppler {
     public static final int MIN_FREQ = 19000;
     public static final int MAX_FREQ = 21000;
 
-    //precalculated to optimize
-    public static final int MIN_FREQ_INDEX = 882;
-    public static final int MAX_FREQ_INDEX = 975;
 
     public static final int RELEVANT_FREQ_WINDOW = 33;
     public static final int DEFAULT_SAMPLE_RATE = 44100;
@@ -59,6 +58,7 @@ public class Doppler {
     //I want to add smoothing
     private static final float SMOOTHING_TIME_CONSTANT = 0.5f;
 
+    /** utility variables for reading and parsing through audio data **/
     private AudioRecord microphone;
     private FrequencyPlayer frequencyPlayer;
     private int SAMPLE_RATE = DEFAULT_SAMPLE_RATE;
@@ -79,13 +79,19 @@ public class Doppler {
     //to calibrate or not
     private boolean calibrate;
     Calibrator calibrator;
+    /** end utility variables for parsing through audio data**/
 
     //callbacks
-    private boolean isGestureCallbackOn = false;
-    private OnGestureCallback gestureCallback;
+    private boolean isGestureListenerAttached = false;
+    private OnGestureListener gestureListener;
     private boolean isReadCallbackOn = false;
     private OnReadCallback readCallback;
 
+    /** variables for gesture detection **/
+    private int previousDirection = 0;
+    private int directionChanges;
+    private int cyclesLeftToRead = -1;
+    private final int cyclesToRead = 4;
 
     public Doppler() {
         //write a check to see if stereo is supported
@@ -146,6 +152,7 @@ public class Doppler {
     public int[] getBandwidth() {
         readAndFFT();
 
+        //rename this
         int primaryTone = freqIndex;
 
         double normalizedVolume = 0;
@@ -225,9 +232,11 @@ public class Doppler {
             callReadCallback(leftBandwidth, rightBandwidth);
         }
 
-        if (isGestureCallbackOn) {
+        if (isGestureListenerAttached) {
             callGestureCallback(leftBandwidth, rightBandwidth);
         }
+
+        maxVolRatio = calibrator.calibrate(maxVolRatio, leftBandwidth, rightBandwidth);
 
         if (repeat) {
             mHandler.post(new Runnable() {
@@ -239,13 +248,49 @@ public class Doppler {
         }
     }
 
-    public void setOnGestureCallback(OnGestureCallback callback) {
-        gestureCallback = callback;
-        isGestureCallbackOn = true;
+    public void setOnGestureCallback(OnGestureListener listener) {
+        gestureListener = listener;
+        isGestureListenerAttached = true;
     }
 
     public void callGestureCallback(int leftBandwidth, int rightBandwidth) {
-        //implement gesture logic
+        if (leftBandwidth > 4 || rightBandwidth > 4) {
+            //Log.d("GESTURE CALLBACK", "Start of if statement");
+            //implement gesture logic
+            int difference = leftBandwidth - rightBandwidth;
+            int direction = (int) signum(difference);
+
+            //Log.d("GESTURE CALLBACK", "DIRECTION IS " + direction);
+
+            if (direction != 0 && direction != previousDirection) {
+                //scan a 4 frame window to wait for taps or double taps
+                //Log.d("GESTURE CALLBACK", "previous direction is diff than current");
+                cyclesLeftToRead = cyclesToRead;
+                //Log.d("GESTURE CALLBACK", "setting prev direction");
+                previousDirection = direction;
+                directionChanges++;
+            }
+
+            cyclesLeftToRead--;
+
+            if (cyclesLeftToRead == 0) {
+                //Log.d("GESTURE CALLBACK", "No more cycles to read. finding appropriate lsitener");
+                if (directionChanges == 1) {
+                    if (previousDirection == -1) {
+                        gestureListener.onPush();
+                    } else {
+                        gestureListener.onPull();
+                    }
+                } else if (directionChanges == 2) {
+                    gestureListener.onTap();
+                } else {
+                    gestureListener.onDoubleTap();
+                }
+                cyclesLeftToRead = -1;
+                previousDirection = 0;
+                directionChanges = 0;
+            }
+        }
     }
 
     public void setOnReadCallback(OnReadCallback callback) {
@@ -261,8 +306,6 @@ public class Doppler {
 
         readCallback.onBandwidthRead(leftBandwidth, rightBandwidth);
         readCallback.onBinsRead(array);
-
-        maxVolRatio = calibrator.calibrate(maxVolRatio, leftBandwidth, rightBandwidth);
     }
 
     public boolean setCalibrate(boolean bool) {

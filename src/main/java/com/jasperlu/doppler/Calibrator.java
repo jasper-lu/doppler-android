@@ -1,6 +1,10 @@
 package com.jasperlu.doppler;
 
-import android.util.Log;
+import static java.lang.Math.min;
+import static java.lang.Math.max;
+import static java.lang.Math.signum;
+
+
 
 /**
  * Created by Jasper on 3/21/2015.
@@ -23,7 +27,7 @@ public class Calibrator {
 
     public double calibrate(double maxVolumeRatio, int leftBandwidth, int rightBandwidth) {
         int difference = leftBandwidth - rightBandwidth;
-        int direction = sign(difference);
+        int direction = (int) signum(difference);
 
         if (previousDirection != direction) {
             directionChanges++;
@@ -48,21 +52,4 @@ public class Calibrator {
         return maxVolumeRatio;
     }
 
-    //wrote my own functions to not import the whole library
-    private double min(double a, double b) {
-        return (a < b) ? a : b;
-    }
-
-    private double max(double a, double b) {
-        return (a > b) ? a : b;
-    }
-
-    private int sign(int x) {
-        if (x == 0) {
-            return 0;
-        }
-        return (x >> 31 != 0) ? -1 : 1;
-    }
-
-    /********** end my own implementations *****/
 }
