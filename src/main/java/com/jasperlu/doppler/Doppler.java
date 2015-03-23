@@ -21,6 +21,17 @@ public class Doppler {
         //for testing/graphing as well
         public void onBinsRead(double[] bins);
     }
+    //base gestures. can extend to have more
+    public interface OnGestureCallback {
+        //swipe towards
+        public void onPush();
+        //swipe away
+        public void onPull();
+        //self-explanatory
+        public void onTap();
+        public void onDoubleTap();
+
+    }
 
     //prelimiary frequency stuff
     public static final float PRELIM_FREQ = 20000;
@@ -40,6 +51,10 @@ public class Doppler {
     private static final double MAX_VOL_RATIO_DEFAULT = 0.1;
     private static final double SECOND_PEAK_RATIO = 0.3;
     public static double maxVolRatio = MAX_VOL_RATIO_DEFAULT;
+
+    //for bandwidth positions in array
+    private static final int LEFT_BANDWIDTH = 0;
+    private static final int RIGHT_BANDWIDTH = 1;
 
     //I want to add smoothing
     private static final float SMOOTHING_TIME_CONSTANT = 0.5f;
@@ -65,12 +80,18 @@ public class Doppler {
     private boolean calibrate;
     Calibrator calibrator;
 
+    //callbacks
+    private boolean isGestureCallbackOn = false;
+    private OnGestureCallback gestureCallback;
+    private boolean isReadCallbackOn = false;
+    private OnReadCallback readCallback;
+
 
     public Doppler() {
         //write a check to see if stereo is supported
         bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         buffer = new short[bufferSize];
-        Log.d("BUEFFER SIZE IS ", bufferSize + "");
+
         frequency = PRELIM_FREQ;
         freqIndex = PRELIM_FREQ_INDEX;
 
@@ -89,13 +110,12 @@ public class Doppler {
         this.freqIndex = fft.freqToIndex(frequency);
     }
 
-    public boolean start(final OnReadCallback callback) {
+    public boolean start() {
         frequencyPlayer.play();
         boolean startedRecording = false;
         try {
             //you might get an error here if another app hasn't released the microphone
             microphone.startRecording();
-            //startReading();
             repeat = true;
 
             new Handler().postDelayed(new Runnable() {
@@ -103,7 +123,7 @@ public class Doppler {
                 public void run() {
                     optimizeFrequency(MIN_FREQ, MAX_FREQ);
                     //assuming fft.forward was already called;
-                    startReading(callback);
+                    readMic();
                 }
             }, 1000);
 
@@ -123,10 +143,10 @@ public class Doppler {
         return true;
     }
 
-    public void startReading(final OnReadCallback callback) {
+    public int[] getBandwidth() {
         readAndFFT();
 
-        int primaryTone = fft.freqToIndex(frequency);
+        int primaryTone = freqIndex;
 
         double normalizedVolume = 0;
 
@@ -192,29 +212,57 @@ public class Doppler {
             rightBandwidth = secondaryRightBandwidth;
         }
 
-        callback.onBandwidthRead(leftBandwidth, rightBandwidth);
+        return new int[]{leftBandwidth, rightBandwidth};
 
-        double[] array = new double[fft.specSize()];
-        for (int i = 0; i < fft.specSize(); ++i) {
-            array[i] = fft.getBand(i);
+    }
+
+    public void readMic() {
+        int[] bandwidths = getBandwidth();
+        int leftBandwidth = bandwidths[LEFT_BANDWIDTH];
+        int rightBandwidth = bandwidths[RIGHT_BANDWIDTH];
+
+        if (isReadCallbackOn) {
+            callReadCallback(leftBandwidth, rightBandwidth);
         }
 
-        callback.onBinsRead(array);
-
-        double tempVol = calibrator.calibrate(maxVolRatio, leftBandwidth, rightBandwidth);
-        if (tempVol != maxVolRatio) {
-            //Log.d("CHANGING MAX VOL RATIO", "NEW: " + tempVol);
-            maxVolRatio = tempVol;
+        if (isGestureCallbackOn) {
+            callGestureCallback(leftBandwidth, rightBandwidth);
         }
 
         if (repeat) {
             mHandler.post(new Runnable() {
                 @Override
                 public void run() {
-                    startReading(callback);
+                    readMic();
                 }
             });
         }
+    }
+
+    public void setOnGestureCallback(OnGestureCallback callback) {
+        gestureCallback = callback;
+        isGestureCallbackOn = true;
+    }
+
+    public void callGestureCallback(int leftBandwidth, int rightBandwidth) {
+        //implement gesture logic
+    }
+
+    public void setOnReadCallback(OnReadCallback callback) {
+       readCallback = callback;
+       isReadCallbackOn = true;
+    }
+
+    public void callReadCallback(int leftBandwidth, int rightBandwidth) {
+        double[] array = new double[fft.specSize()];
+        for (int i = 0; i < fft.specSize(); ++i) {
+            array[i] = fft.getBand(i);
+        }
+
+        readCallback.onBandwidthRead(leftBandwidth, rightBandwidth);
+        readCallback.onBinsRead(array);
+
+        maxVolRatio = calibrator.calibrate(maxVolRatio, leftBandwidth, rightBandwidth);
     }
 
     public boolean setCalibrate(boolean bool) {
@@ -246,7 +294,7 @@ public class Doppler {
         int minInd = fft.freqToIndex(minFreq);
         int maxInd = fft.freqToIndex(maxFreq);
 
-        int primaryInd = fft.freqToIndex(frequency);
+        int primaryInd = freqIndex;
         for (int i = minInd; i <= maxInd; ++i) {
             if (fft.getBand(i) > fft.getBand(primaryInd)) {
                 primaryInd = i;
