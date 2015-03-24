@@ -33,6 +33,8 @@ public class Doppler {
         public void onTap();
         public void onDoubleTap();
 
+        public void onNothing();
+
     }
 
     //prelimiary frequency stuff
@@ -77,7 +79,7 @@ public class Doppler {
 
     FFT fft;
     //to calibrate or not
-    private boolean calibrate;
+    private boolean calibrate = true;
     Calibrator calibrator;
     /** end utility variables for parsing through audio data**/
 
@@ -239,7 +241,9 @@ public class Doppler {
             callGestureCallback(leftBandwidth, rightBandwidth);
         }
 
-        maxVolRatio = calibrator.calibrate(maxVolRatio, leftBandwidth, rightBandwidth);
+        if (calibrate) {
+            maxVolRatio = calibrator.calibrate(maxVolRatio, leftBandwidth, rightBandwidth);
+        }
 
         if (repeat) {
             mHandler.post(new Runnable() {
@@ -251,9 +255,14 @@ public class Doppler {
         }
     }
 
-    public void setOnGestureCallback(OnGestureListener listener) {
+    public void setOnGestureListener(OnGestureListener listener) {
         gestureListener = listener;
         isGestureListenerAttached = true;
+    }
+
+    public void removeGestureListener() {
+        gestureListener = null;
+        isGestureListenerAttached = false;
     }
 
     public void callGestureCallback(int leftBandwidth, int rightBandwidth) {
@@ -306,12 +315,19 @@ public class Doppler {
             previousDirection = 0;
             directionChanges = 0;
             cyclesToRefresh = cyclesToRead;
+        } else {
+            gestureListener.onNothing();
         }
     }
 
     public void setOnReadCallback(OnReadCallback callback) {
-       readCallback = callback;
-       isReadCallbackOn = true;
+        readCallback = callback;
+        isReadCallbackOn = true;
+    }
+
+    public void removeReadCallback() {
+        readCallback = null;
+        isReadCallbackOn = false;
     }
 
     public void callReadCallback(int leftBandwidth, int rightBandwidth) {
@@ -390,7 +406,7 @@ public class Doppler {
         }
 
         // zero out first point (not touched by odd-length window)
-        fftRealArray[0] = 0;
+        //fftRealArray[0] = 0;
 
         fft.forward(fftRealArray);
 
