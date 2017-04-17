@@ -2,12 +2,12 @@
 
 This is my implementation of Gupta's [Soundwave paper](http://research.microsoft.com/en-us/um/redmond/groups/cue/publications/guptasoundwavechi2012.pdf) for android. The project is heavily inspired by Daniel Rapp's [javascript plugin](https://github.com/DanielRapp/doppler) for the same effect.
 
-##Demo
+## Demo
 You can check out some sample code/use cases for this library in my [demo app](https://github.com/jasper-lu/Doppler-Android-Demo).
 
 [Download link](https://play.google.com/store/apps/details?id=com.jasperlu.test)
 
-##How to Use
+## How to Use
 I haven't figured out how to work this project into gradle/maven, so the only way to use it at the moment is to download the library as a zip and add it to your Android Studio project as a module.
 
 To use the library in your code, just initialize a new Doppler instance, and start it:
@@ -51,7 +51,7 @@ Should you wish to turn off autocalibration, just call the method:
 
     doppler.setCalibrate(false);
 
-##Disclaimer
+## Disclaimer
 I was only able to test the library on my OnePlus One so far, so the library may still be a little buggy. Also, I get some jagged lines near the edges of the 20k frequency reading, which may either be caused by bad code or my device.
 
 Some times, this causes Doppler to bug out and "lock" to one direction, so if this happens, just reinitialize the Doppler instance and it should work again.
